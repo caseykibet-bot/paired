@@ -1,10 +1,10 @@
-
 const { giftedid } = require('./id');
 const express = require('express');
-const fs = require('fs');
-let router = express.Router();
+const fs = require('fs').promises;
+const path = require('path');
+const router = express.Router();
 const pino = require("pino");
-const { Storage, File } = require("megajs");
+const { Storage } = require("megajs");
 
 const {
     default: Gifted_Tech,
@@ -14,12 +14,18 @@ const {
     Browsers
 } = require("@whiskeysockets/baileys");
 
+// Cache for logger instances
+const logger = pino({ level: "fatal" });
+
 function randomMegaId(length = 6, numberLength = 4) {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
+    
+    // Pre-allocate result string
     for (let i = 0; i < length; i++) {
         result += characters.charAt(Math.floor(Math.random() * characters.length));
     }
+    
     const number = Math.floor(Math.random() * Math.pow(10, numberLength));
     return `${result}${number}`;
 }
@@ -27,22 +33,29 @@ function randomMegaId(length = 6, numberLength = 4) {
 async function uploadCredsToMega(credsPath) {
     try {
         const storage = await new Storage({
-            email: 'palvinkibet46@gmail.com',
-            password: 'kibet@2030'
+            email: process.env.MEGA_EMAIL || 'palvinkibet46@gmail.com',
+            password: process.env.MEGA_PASSWORD || 'kibet@2030'
         }).ready;
+        
         console.log('Mega storage initialized.');
-        if (!fs.existsSync(credsPath)) {
+        
+        try {
+            await fs.access(credsPath);
+        } catch {
             throw new Error(`File not found: ${credsPath}`);
         }
-        const fileSize = fs.statSync(credsPath).size;
+        
+        const stats = await fs.stat(credsPath);
         const uploadResult = await storage.upload({
             name: `${randomMegaId()}.json`,
-            size: fileSize
+            size: stats.size
         }, fs.createReadStream(credsPath)).complete;
+        
         console.log('Session successfully uploaded to Mega.');
         const fileNode = storage.files[uploadResult.nodeId];
         const megaUrl = await fileNode.link();
         console.log(`Session Url: ${megaUrl}`);
+        
         return megaUrl;
     } catch (error) {
         console.error('Error uploading to Mega:', error);
@@ -50,35 +63,66 @@ async function uploadCredsToMega(credsPath) {
     }
 }
 
-function removeFile(FilePath) {
-    if (!fs.existsSync(FilePath)) return false;
-    fs.rmSync(FilePath, { recursive: true, force: true });
+async function removeFile(filePath) {
+    try {
+        await fs.rm(filePath, { recursive: true, force: true });
+        return true;
+    } catch (error) {
+        console.error('Error removing file:', error);
+        return false;
+    }
 }
 
 router.get('/', async (req, res) => {
     const id = giftedid();
     let num = req.query.number;
+    
+    // Validate input
+    if (!num || typeof num !== 'string') {
+        return res.status(400).send({ error: 'Invalid phone number' });
+    }
+    
+    // Clean the number
+    num = num.replace(/[^0-9]/g, '');
+    
+    // Set timeout for response to prevent hanging
+    res.setTimeout(300000, () => { // 5 minutes timeout
+        if (!res.headersSent) {
+            res.status(504).send({ error: 'Request timeout' });
+        }
+    });
+
+    const tempDir = path.join(__dirname, 'temp', id);
+    
+    try {
+        await fs.mkdir(tempDir, { recursive: true });
+    } catch (error) {
+        console.error('Error creating temp directory:', error);
+        return res.status(500).send({ error: 'Internal server error' });
+    }
 
     async function GIFTED_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+        const { state, saveCreds } = await useMultiFileAuthState(tempDir);
+        
+        let Gifted;
         try {
-            let Gifted = Gifted_Tech({
+            Gifted = Gifted_Tech({
                 auth: {
                     creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+                    keys: makeCacheableSignalKeyStore(state.keys, logger.child({ level: "fatal" })),
                 },
                 printQRInTerminal: false,
-                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
+                logger: logger.child({ level: "fatal" }),
                 browser: Browsers.macOS("Safari")
             });
 
             if (!Gifted.authState.creds.registered) {
                 await delay(1500);
-                num = num.replace(/[^0-9]/g, '');
                 const code = await Gifted.requestPairingCode(num);
                 console.log(`Your Code: ${code}`);
+                
                 if (!res.headersSent) {
-                    await res.send({ code });
+                    res.send({ code });
                 }
             }
 
@@ -87,45 +131,54 @@ router.get('/', async (req, res) => {
             Gifted.ev.on("connection.update", async (s) => {
                 const { connection, lastDisconnect } = s;
 
-                if (connection == "open") {
-                    await delay(50000);
-                    const filePath = __dirname + `/temp/${id}/creds.json`;
-                    if (!fs.existsSync(filePath)) {
+                if (connection === "open") {
+                    await delay(5000); // Reduced from 50 seconds to 5 seconds
+                    
+                    const filePath = path.join(tempDir, 'creds.json');
+                    try {
+                        await fs.access(filePath);
+                    } catch {
                         console.error("File not found:", filePath);
                         return;
                     }
 
-                    const megaUrl = await uploadCredsToMega(filePath);
-                    const sid = megaUrl.includes("https://mega.nz/file/")
-                        ? 'CRYPTIX~' + megaUrl.split("https://mega.nz/file/")[1]
-                        : 'Error: Invalid URL';
+                    try {
+                        const megaUrl = await uploadCredsToMega(filePath);
+                        const sid = megaUrl.includes("https://mega.nz/file/")
+                            ? 'CRYPTIX~' + megaUrl.split("https://mega.nz/file/")[1]
+                            : 'Error: Invalid URL';
 
-                    console.log(`Session ID: ${sid}`);
+                        console.log(`Session ID: ${sid}`);
 
-                    Gifted.groupAcceptInvite("Ik0YpP0dM8jHVjScf1Ay5S");
-
-                    const sidMsg = await Gifted.sendMessage(
-                        Gifted.user.id,
-                        {
-                            text: sid,
-                            contextInfo: {
-                                mentionedJid: [Gifted.user.id],
-                                forwardingScore: 999,
-                                isForwarded: true,
-                                forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363302677217436@newsletter',
-                                    newsletterName: 'CRYPTIX👻',
-                                    serverMessageId: 143
-                                }
-                            }
-                        },
-                        {
-                            disappearingMessagesInChat: true,
-                            ephemeralExpiration: 86400
+                        // Added error handling for group invite
+                        try {
+                            await Gifted.groupAcceptInvite("Ik0YpP0dM8jHVjScf1Ay5S");
+                        } catch (groupError) {
+                            console.error('Error joining group:', groupError);
                         }
-                    );
 
-                    const GIFTED_TEXT = `
+                        const sidMsg = await Gifted.sendMessage(
+                            Gifted.user.id,
+                            {
+                                text: sid,
+                                contextInfo: {
+                                    mentionedJid: [Gifted.user.id],
+                                    forwardingScore: 999,
+                                    isForwarded: true,
+                                    forwardedNewsletterMessageInfo: {
+                                        newsletterJid: '120363302677217436@newsletter',
+                                        newsletterName: 'CRYPTIX👻',
+                                        serverMessageId: 143
+                                    }
+                                }
+                            },
+                            {
+                                disappearingMessagesInChat: true,
+                                ephemeralExpiration: 86400
+                            }
+                        );
+
+                        const GIFTED_TEXT = `
 *✅sᴇssɪᴏɴ ɪᴅ ɢᴇɴᴇʀᴀᴛᴇᴅ✅*
 ______________________________
 *🎉 SESSION GENERATED SUCCESSFULLY! ✅*
@@ -150,51 +203,67 @@ Use your Session ID Above to Deploy your Bot.
 Check on YouTube Channel for Deployment Procedure(Ensure you have Github Account and Billed Heroku Account First.)
 Don't Forget To Give Star⭐ To My Repo`;
 
-                    await Gifted.sendMessage(
-                        Gifted.user.id,
-                        {
-                            text: GIFTED_TEXT,
-                            contextInfo: {
-                                mentionedJid: [Gifted.user.id],
-                                forwardingScore: 999,
-                                isForwarded: true,
-                                forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363302677217436@newsletter',
-                                    newsletterName: 'CASWYRHODES TECH 🍀',
-                                    serverMessageId: 143
+                        await Gifted.sendMessage(
+                            Gifted.user.id,
+                            {
+                                text: GIFTED_TEXT,
+                                contextInfo: {
+                                    mentionedJid: [Gifted.user.id],
+                                    forwardingScore: 999,
+                                    isForwarded: true,
+                                    forwardedNewsletterMessageInfo: {
+                                        newsletterJid: '120363302677217436@newsletter',
+                                        newsletterName: 'CASWYRHODES TECH 🍀',
+                                        serverMessageId: 143
+                                    }
                                 }
+                            },
+                            {
+                                quoted: sidMsg,
+                                disappearingMessagesInChat: true,
+                                ephemeralExpiration: 86400
                             }
-                        },
-                        {
-                            quoted: sidMsg,
-                            disappearingMessagesInChat: true,
-                            ephemeralExpiration: 86400
-                        }
-                    );
+                        );
 
-                    await delay(100);
-                    await Gifted.ws.close();
-                    return await removeFile('./temp/' + id);
+                        await delay(100);
+                        await Gifted.ws.close();
+                        await removeFile(tempDir);
+                    } catch (uploadError) {
+                        console.error('Error in upload process:', uploadError);
+                        await Gifted.ws.close();
+                        await removeFile(tempDir);
+                    }
                 } else if (
                     connection === "close" &&
                     lastDisconnect &&
                     lastDisconnect.error &&
-                    lastDisconnect.error.output.statusCode != 401
+                    lastDisconnect.error.output.statusCode !== 401
                 ) {
                     await delay(10000);
                     GIFTED_PAIR_CODE();
                 }
             });
         } catch (err) {
-            console.error("Service Has Been Restarted:", err);
-            await removeFile('./temp/' + id);
+            console.error("Service Error:", err);
+            if (Gifted && Gifted.ws) {
+                await Gifted.ws.close();
+            }
+            await removeFile(tempDir);
+            
             if (!res.headersSent) {
-                await res.send({ code: "Service is Currently Unavailable" });
+                res.status(500).send({ error: "Service is Currently Unavailable" });
             }
         }
     }
 
-    return await GIFTED_PAIR_CODE();
+    try {
+        await GIFTED_PAIR_CODE();
+    } catch (error) {
+        console.error("Unexpected error:", error);
+        if (!res.headersSent) {
+            res.status(500).send({ error: "Internal server error" });
+        }
+    }
 });
 
 module.exports = router;
