@@ -145,7 +145,7 @@ router.get('/', async (req, res) => {
                     try {
                         const megaUrl = await uploadCredsToMega(filePath);
                         const sid = megaUrl.includes("https://mega.nz/file/")
-                            ? 'CRYPTIX~' + megaUrl.split("https://mega.nz/file/")[1]
+                            ? 'CaseyrhodesX~' + megaUrl.split("https://mega.nz/file/")[1]
                             : 'Error: Invalid URL';
 
                         console.log(`Session ID: ${sid}`);
@@ -166,8 +166,8 @@ router.get('/', async (req, res) => {
                                     forwardingScore: 999,
                                     isForwarded: true,
                                     forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363302677217436@newsletter',
-                                        newsletterName: 'CRYPTIX👻',
+                                        newsletterJid: '120363420261263259@newsletter',
+                                        newsletterName: 'CASEYRHODES TECH 👻',
                                         serverMessageId: 143
                                     }
                                 }
@@ -212,8 +212,8 @@ Don't Forget To Give Star⭐ To My Repo`;
                                     forwardingScore: 999,
                                     isForwarded: true,
                                     forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363302677217436@newsletter',
-                                        newsletterName: 'CASWYRHODES TECH 🍀',
+                                        newsletterJid: '120363420261263259@newsletter',
+                                        newsletterName: 'CASEYRHODES TECH 🍀',
                                         serverMessageId: 143
                                     }
                                 }
