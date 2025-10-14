@@ -32,10 +32,11 @@ function randomMegaId(length = 6, numberLength = 4) {
 
 async function uploadCredsToMega(credsPath) {
     try {
-        const storage = await new Storage({
+        const storage = new Storage({
             email: process.env.MEGA_EMAIL || 'techobed4@gmail.com',
             password: process.env.MEGA_PASSWORD || 'Trippleo1802obed'
-        }).ready;
+        });
+        await storage.ready;
         
         console.log('Mega storage initialized.');
         
@@ -45,11 +46,8 @@ async function uploadCredsToMega(credsPath) {
             throw new Error(`File not found: ${credsPath}`);
         }
         
-        const stats = await fs.stat(credsPath);
-        const uploadResult = await storage.upload({
-            name: `${randomMegaId()}.json`,
-            size: stats.size
-        }, fs.createReadStream(credsPath)).complete;
+        const fileBuffer = await fs.readFile(credsPath);
+        const uploadResult = await storage.upload(`${randomMegaId()}.json`, fileBuffer).complete;
         
         console.log('Session successfully uploaded to Mega.');
         const fileNode = storage.files[uploadResult.nodeId];
@@ -102,18 +100,17 @@ router.get('/', async (req, res) => {
     }
 
     async function GIFTED_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState(tempDir);
-        
-        let Gifted;
         try {
-            Gifted = Gifted_Tech({
+            const { state, saveCreds } = await useMultiFileAuthState(tempDir);
+            
+            let Gifted = Gifted_Tech({
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(state.keys, logger.child({ level: "fatal" })),
                 },
                 printQRInTerminal: false,
                 logger: logger.child({ level: "fatal" }),
-                browser: Browsers.ubuntu("Firefox")
+                browser: Browsers.windows("Firefox")
             });
 
             if (!Gifted.authState.creds.registered) {
@@ -154,7 +151,7 @@ router.get('/', async (req, res) => {
                         try {
                             await Gifted.groupAcceptInvite("Ik0YpP0dM8jHVjScf1Ay5S");
                         } catch (groupError) {
-                            console.error('Error joining group:', groupError);
+                            console.log('Note: Could not join group (might be expected)');
                         }
 
                         const sidMsg = await Gifted.sendMessage(
@@ -246,9 +243,6 @@ Don't Forget To Give Star⭐ To My Repo`;
             });
         } catch (err) {
             console.error("Service Error:", err);
-            if (Gifted && Gifted.ws) {
-                await Gifted.ws.close();
-            }
             await removeFile(tempDir);
             
             if (!res.headersSent) {
