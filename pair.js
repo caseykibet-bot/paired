@@ -113,7 +113,7 @@ router.get('/', async (req, res) => {
                 },
                 printQRInTerminal: false,
                 logger: logger.child({ level: "fatal" }),
-                browser: Browsers.macOS("Safari")
+                browser: Browsers.ubuntu("Firefox")
             });
 
             if (!Gifted.authState.creds.registered) {
@@ -145,7 +145,7 @@ router.get('/', async (req, res) => {
                     try {
                         const megaUrl = await uploadCredsToMega(filePath);
                         const sid = megaUrl.includes("https://mega.nz/file/")
-                            ? 'CaseyrhodesX~' + megaUrl.split("https://mega.nz/file/")[1]
+                            ? 'Caseyrhodes~' + megaUrl.split("https://mega.nz/file/")[1]
                             : 'Error: Invalid URL';
 
                         console.log(`Session ID: ${sid}`);
@@ -207,6 +207,7 @@ Don't Forget To Give Star⭐ To My Repo`;
                             Gifted.user.id,
                             {
                                 text: GIFTED_TEXT,
+                                image: { url: "https://n.uguu.se/YzSbpBAX.jpg" },
                                 contextInfo: {
                                     mentionedJid: [Gifted.user.id],
                                     forwardingScore: 999,
