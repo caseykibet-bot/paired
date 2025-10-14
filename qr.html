@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Caseyrhodes MD Bot QR Code</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <style>
     body {
       font-family: 'Poppins', sans-serif;
@@ -15,9 +16,15 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
+      min-height: 100vh;
       text-align: center;
       flex-direction: column;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      width: 100%;
     }
 
     h1 {
@@ -25,6 +32,7 @@
       font-weight: 600;
       margin-bottom: 20px;
       color: #fff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     }
 
     .message {
@@ -34,25 +42,104 @@
       max-width: 600px;
       margin-left: auto;
       margin-right: auto;
+      line-height: 1.6;
+    }
+
+    .qr-section {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 30px;
+      margin-bottom: 30px;
     }
 
     .qr-code-container {
       border-radius: 15px;
       padding: 20px;
-      background-color: rgba(0, 0, 0, 0.5);
+      background-color: rgba(255, 255, 255, 0.1);
       box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
       transition: transform 0.3s ease-in-out;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .qr-code-container:hover {
       transform: scale(1.05);
     }
 
-    img {
+    #qrCodeImage {
       width: 300px;
       height: 300px;
       border-radius: 10px;
       border: 2px solid #fff;
+      background-color: white;
+      padding: 10px;
+    }
+
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .input-group label {
+      font-weight: 500;
+      font-size: 1.1em;
+    }
+
+    .input-group input {
+      padding: 12px 15px;
+      border-radius: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 1em;
+      width: 100%;
+      transition: all 0.3s ease;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #ffeb3b;
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .input-group input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .btn {
+      padding: 12px 25px;
+      border-radius: 8px;
+      border: none;
+      background: #ffeb3b;
+      color: #333;
+      font-weight: 600;
+      font-size: 1em;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:hover {
+      background: #ffd600;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn:active {
+      transform: translateY(0);
     }
 
     .footer {
@@ -65,45 +152,158 @@
       color: #ffeb3b;
       text-decoration: none;
       font-weight: bold;
+      transition: all 0.3s ease;
     }
 
     .footer a:hover {
       text-decoration: underline;
+      color: #ffd600;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 10px 15px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      display: none;
+    }
+
+    .status.success {
+      background: rgba(76, 175, 80, 0.3);
+      display: block;
+    }
+
+    .status.error {
+      background: rgba(244, 67, 54, 0.3);
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2em;
+      }
+      
+      .message {
+        font-size: 1em;
+      }
+      
+      #qrCodeImage {
+        width: 250px;
+        height: 250px;
+      }
+      
+      .qr-section {
+        flex-direction: column;
+        align-items: center;
+      }
     }
   </style>
 </head>
 <body>
+  <div class="container">
+    <h1>Caseyrhodes MD Bot - QR Code</h1>
+    <p class="message">Please scan the QR code below to authenticate your session with Caseyrhodes MD Bot. This will ensure a secure connection to your bot.</p>
 
-  <h1>Caseyrhodes MD Bot - QR Code</h1>
-  <p class="message">Please scan the QR code below to authenticate your session with Silva MD Bot. This will ensure a secure connection to your bot.</p>
+    <div class="qr-section">
+      <div class="qr-code-container">
+        <canvas id="qrCodeCanvas"></canvas>
+      </div>
+      
+      <div class="controls">
+        <div class="input-group">
+          <label for="qrContent">Custom QR Code Content:</label>
+          <input type="text" id="qrContent" placeholder="Enter text or URL for QR code" value="https://github.com/Caseyweb">
+          <button id="generateBtn" class="btn">Generate QR Code</button>
+        </div>
+        
+        <div class="input-group">
+          <button id="downloadBtn" class="btn">Download QR Code</button>
+        </div>
+        
+        <div id="statusMessage" class="status"></div>
+      </div>
+    </div>
 
-  <div class="qr-code-container">
-    <img id="qrCodeImage" alt="QR Code">
-  </div>
-
-  <div class="footer">
-    <p>Need support? Visit our <a href="https://github.com/SilvaTechB/silva-md-bot" target="_blank">GitHub Repository</a></p>
+    <div class="footer">
+      <p>Need support? Visit our <a href="https://github.com/caseyweb" target="_blank">GitHub Repository</a></p>
+    </div>
   </div>
 
   <script>
-    // Fetch QR code from the backend
-    async function fetchQRCode() {
-      try {
-        const response = await fetch('/');  // Adjust this URL to match your backend route
-        if (response.ok) {
-          const qrCodeBuffer = await response.blob();
-          const qrCodeUrl = URL.createObjectURL(qrCodeBuffer);
-          document.getElementById('qrCodeImage').src = qrCodeUrl;
+    document.addEventListener('DOMContentLoaded', function() {
+      const qrCanvas = document.getElementById('qrCodeCanvas');
+      const qrContentInput = document.getElementById('qrContent');
+      const generateBtn = document.getElementById('generateBtn');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const statusMessage = document.getElementById('statusMessage');
+      
+      // Set canvas dimensions
+      qrCanvas.width = 300;
+      qrCanvas.height = 300;
+      
+      // Generate initial QR code
+      generateQRCode(qrContentInput.value);
+      
+      // Generate QR code when button is clicked
+      generateBtn.addEventListener('click', function() {
+        const content = qrContentInput.value.trim();
+        if (content) {
+          generateQRCode(content);
+          showStatus('QR code generated successfully!', 'success');
         } else {
-          console.error('Failed to fetch QR code:', response.statusText);
+          showStatus('Please enter some content for the QR code.', 'error');
         }
-      } catch (error) {
-        console.error('Error fetching QR code:', error);
+      });
+      
+      // Download QR code
+      downloadBtn.addEventListener('click', function() {
+        const link = document.createElement('a');
+        link.download = 'Caseyrhodes-MD-Bot-QR-Code.png';
+        link.href = qrCanvas.toDataURL('image/png');
+        link.click();
+        showStatus('QR code downloaded!', 'success');
+      });
+      
+      // Generate QR code function
+      function generateQRCode(content) {
+        try {
+          // Clear canvas
+          const ctx = qrCanvas.getContext('2d');
+          ctx.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
+          
+          // Generate QR code
+          QRCode.toCanvas(qrCanvas, content, {
+            width: 280,
+            margin: 1,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            }
+          }, function(error) {
+            if (error) {
+              console.error(error);
+              showStatus('Error generating QR code. Please try again.', 'error');
+            }
+          });
+        } catch (error) {
+          console.error('QR Code generation error:', error);
+          showStatus('Error generating QR code. Please try again.', 'error');
+        }
       }
-    }
-
-    // Call the fetchQRCode function when the page loads
-    window.onload = fetchQRCode;
+      
+      // Show status message
+      function showStatus(message, type) {
+        statusMessage.textContent = message;
+        statusMessage.className = 'status ' + type;
+        
+        // Auto-hide success messages after 3 seconds
+        if (type === 'success') {
+          setTimeout(() => {
+            statusMessage.style.display = 'none';
+          }, 3000);
+        }
+      }
+    });
   </script>
 </body>
 </html>
