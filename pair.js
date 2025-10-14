@@ -1,264 +1,151 @@
-const { giftedid } = require('./id');
+const { makeid } = require('./id');
 const express = require('express');
-const fs = require('fs').promises;
-const path = require('path');
-const router = express.Router();
+const fs = require('fs');
+let router = express.Router();
 const pino = require("pino");
-const { Storage } = require("megajs");
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalKeyStore, getAggregateVotesInPollMessage, DisconnectReason, WA_DEFAULT_EPHEMERAL, jidNormalizedUser, proto, getDevice, generateWAMessageFromContent, fetchLatestBaileysVersion, makeInMemoryStore, getContentType, generateForwardMessageContent, downloadContentFromMessage, jidDecode } = require('@whiskeysockets/baileys')
 
-const {
-    default: Gifted_Tech,
-    useMultiFileAuthState,
-    delay,
-    makeCacheableSignalKeyStore,
-    Browsers
-} = require("@whiskeysockets/baileys");
-
-// Cache for logger instances
-const logger = pino({ level: "fatal" });
-
-function randomMegaId(length = 6, numberLength = 4) {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    
-    // Pre-allocate result string
-    for (let i = 0; i < length; i++) {
-        result += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    
-    const number = Math.floor(Math.random() * Math.pow(10, numberLength));
-    return `${result}${number}`;
+const { upload } = require('./mega');
+function removeFile(FilePath) {
+    if (!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true });
 }
-
-async function uploadCredsToMega(credsPath) {
-    try {
-        const storage = new Storage({
-            email: process.env.MEGA_EMAIL || 'techobed4@gmail.com',
-            password: process.env.MEGA_PASSWORD || 'Trippleo1802obed'
-        });
-        await storage.ready;
-        
-        console.log('Mega storage initialized.');
-        
-        try {
-            await fs.access(credsPath);
-        } catch {
-            throw new Error(`File not found: ${credsPath}`);
-        }
-        
-        const fileBuffer = await fs.readFile(credsPath);
-        const uploadResult = await storage.upload(`${randomMegaId()}.json`, fileBuffer).complete;
-        
-        console.log('Session successfully uploaded to Mega.');
-        const fileNode = storage.files[uploadResult.nodeId];
-        const megaUrl = await fileNode.link();
-        console.log(`Session Url: ${megaUrl}`);
-        
-        return megaUrl;
-    } catch (error) {
-        console.error('Error uploading to Mega:', error);
-        throw error;
-    }
-}
-
-async function removeFile(filePath) {
-    try {
-        await fs.rm(filePath, { recursive: true, force: true });
-        return true;
-    } catch (error) {
-        console.error('Error removing file:', error);
-        return false;
-    }
-}
-
 router.get('/', async (req, res) => {
-    const id = giftedid();
+    const id = makeid();
     let num = req.query.number;
-    
-    // Validate input
-    if (!num || typeof num !== 'string') {
-        return res.status(400).send({ error: 'Invalid phone number' });
-    }
-    
-    // Clean the number
-    num = num.replace(/[^0-9]/g, '');
-    
-    // Set timeout for response to prevent hanging
-    res.setTimeout(300000, () => { // 5 minutes timeout
-        if (!res.headersSent) {
-            res.status(504).send({ error: 'Request timeout' });
-        }
-    });
-
-    const tempDir = path.join(__dirname, 'temp', id);
-    
-    try {
-        await fs.mkdir(tempDir, { recursive: true });
-    } catch (error) {
-        console.error('Error creating temp directory:', error);
-        return res.status(500).send({ error: 'Internal server error' });
-    }
-
-    async function GIFTED_PAIR_CODE() {
+    async function GIFTED_MD_PAIR_CODE() {
+        const {
+            state,
+            saveCreds
+        } = await useMultiFileAuthState('./temp/' + id);
         try {
-            const { state, saveCreds } = await useMultiFileAuthState(tempDir);
+var items = ["Safari"];
+function selectRandomItem(array) {
+  var randomIndex = Math.floor(Math.random() * array.length);
+  return array[randomIndex];
+}
+var randomItem = selectRandomItem(items);
             
-            let Gifted = Gifted_Tech({
+            let sock = makeWASocket({
                 auth: {
                     creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, logger.child({ level: "fatal" })),
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
                 },
                 printQRInTerminal: false,
-                logger: logger.child({ level: "fatal" }),
-                browser: Browsers.windows("Firefox")
+                generateHighQualityLinkPreview: true,
+                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
+                syncFullHistory: false,
+                browser: Browsers.macOS(randomItem)
             });
-
-            if (!Gifted.authState.creds.registered) {
+            if (!sock.authState.creds.registered) {
                 await delay(1500);
-                const code = await Gifted.requestPairingCode(num);
-                console.log(`Your Code: ${code}`);
-                
+                num = num.replace(/[^0-9]/g, '');
+                const code = await sock.requestPairingCode(num);
                 if (!res.headersSent) {
-                    res.send({ code });
+                    await res.send({ code });
                 }
             }
+            sock.ev.on('creds.update', saveCreds);
+            sock.ev.on("connection.update", async (s) => {
 
-            Gifted.ev.on('creds.update', saveCreds);
-
-            Gifted.ev.on("connection.update", async (s) => {
-                const { connection, lastDisconnect } = s;
-
-                if (connection === "open") {
-                    await delay(5000); // Reduced from 50 seconds to 5 seconds
-                    
-                    const filePath = path.join(tempDir, 'creds.json');
-                    try {
-                        await fs.access(filePath);
-                    } catch {
-                        console.error("File not found:", filePath);
-                        return;
-                    }
-
-                    try {
-                        const megaUrl = await uploadCredsToMega(filePath);
-                        const sid = megaUrl.includes("https://mega.nz/file/")
-                            ? 'Caseyrhodes~' + megaUrl.split("https://mega.nz/file/")[1]
-                            : 'Error: Invalid URL';
-
-                        console.log(`Session ID: ${sid}`);
-
-                        // Added error handling for group invite
-                        try {
-                            await Gifted.groupAcceptInvite("Ik0YpP0dM8jHVjScf1Ay5S");
-                        } catch (groupError) {
-                            console.log('Note: Could not join group (might be expected)');
+    const {
+                    connection,
+                    lastDisconnect
+                } = s;
+                
+                if (connection == "open") {
+                    await delay(5000);
+                    let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
+                    let rf = __dirname + `/temp/${id}/creds.json`;
+                    function generateRandomText() {
+                        const prefix = "3EB";
+                        const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                        let randomText = prefix;
+                        for (let i = prefix.length; i < 22; i++) {
+                            const randomIndex = Math.floor(Math.random() * characters.length);
+                            randomText += characters.charAt(randomIndex);
                         }
-
-                        const sidMsg = await Gifted.sendMessage(
-                            Gifted.user.id,
-                            {
-                                text: sid,
-                                contextInfo: {
-                                    mentionedJid: [Gifted.user.id],
-                                    forwardingScore: 999,
-                                    isForwarded: true,
-                                    forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363420261263259@newsletter',
-                                        newsletterName: 'CASEYRHODES TECH 👻',
-                                        serverMessageId: 143
-                                    }
-                                }
-                            },
-                            {
-                                disappearingMessagesInChat: true,
-                                ephemeralExpiration: 86400
-                            }
-                        );
-
-                        const GIFTED_TEXT = `
-*✅sᴇssɪᴏɴ ɪᴅ ɢᴇɴᴇʀᴀᴛᴇᴅ✅*
-______________________________
-*🎉 SESSION GENERATED SUCCESSFULLY! ✅*
-
-*💪 Empowering Your Experience with Caseyrhodes Bot*
-
-*🌟 Show your support by giving our repo a star! 🌟*
-🔗 https://github.com/caseyweb/CASEYRHODES-XMD
-
-*💭 Need help? Join our support groups:*
-📢 💬
-https://whatsapp.com/channel/0029VakUEfb4o7qVdkwPk83E
-
-*📚 Learn & Explore More with Tutorials:*
-🪄 YouTube Channel https://www.youtube.com/@caseyrhodes01
-
-> ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴄᴀsᴇʏʀʜᴏᴅᴇs ᴛᴇᴄʜ
-*Together, we build the future of automation! 🚀*
-______________________________
-
-Use your Session ID Above to Deploy your Bot.
-Check on YouTube Channel for Deployment Procedure(Ensure you have Github Account and Billed Heroku Account First.)
-Don't Forget To Give Star⭐ To My Repo`;
-
-                        await Gifted.sendMessage(
-                            Gifted.user.id,
-                            {
-                                text: GIFTED_TEXT,
-                                image: { url: "https://n.uguu.se/YzSbpBAX.jpg" },
-                                contextInfo: {
-                                    mentionedJid: [Gifted.user.id],
-                                    forwardingScore: 999,
-                                    isForwarded: true,
-                                    forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363420261263259@newsletter',
-                                        newsletterName: 'CASEYRHODES TECH 🍀',
-                                        serverMessageId: 143
-                                    }
-                                }
-                            },
-                            {
-                                quoted: sidMsg,
-                                disappearingMessagesInChat: true,
-                                ephemeralExpiration: 86400
-                            }
-                        );
-
-                        await delay(100);
-                        await Gifted.ws.close();
-                        await removeFile(tempDir);
-                    } catch (uploadError) {
-                        console.error('Error in upload process:', uploadError);
-                        await Gifted.ws.close();
-                        await removeFile(tempDir);
+                        return randomText;
                     }
-                } else if (
-                    connection === "close" &&
-                    lastDisconnect &&
-                    lastDisconnect.error &&
-                    lastDisconnect.error.output.statusCode !== 401
-                ) {
-                    await delay(10000);
-                    GIFTED_PAIR_CODE();
+                    const randomText = generateRandomText();
+                    try {
+
+
+                        
+                        const { upload } = require('./mega');
+                        const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                        const string_session = mega_url.replace('https://mega.nz/file/', '');
+                        let md = "Caseyrhodes~" + string_session;
+                        let code = await sock.sendMessage(sock.user.id, { text: md });
+                        let desc = `*Hello there ! 👋* 
+
+> Do not share your session id with anyone.
+
+ *Thanks for CASEYRHODES-XMD* 
+
+> Join WhatsApp Channel :- ⤵️
+ 
+ https://whatsapp.com/channel/0029VarDt9t30LKL1SoYXy26
+
+Dont forget to fork the repo ⬇️
+
+https://github.com/caseyweb/CASEYRHODES-XMD
+
+> *© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴄᴀsᴇʏʀʜᴏᴅᴇs ᴛᴇᴄʜ*`; 
+                        await sock.sendMessage(sock.user.id, {
+text: desc,
+contextInfo: {
+externalAdReply: {
+title: "ᴍʀ.ᴄᴀsᴇʏʀʜᴏᴅᴇs",
+thumbnailUrl: "",
+sourceUrl: "https://whatsapp.com/channel/0029VarDt9t30LKL1SoYXy26",
+mediaType: 1,
+renderLargerThumbnail: true
+}  
+}
+},
+{quoted:code })
+                    } catch (e) {
+                            let ddd = sock.sendMessage(sock.user.id, { text: e });
+                            let desc = `*Don't Share with anyone this code use for deploying CASEYRHODES-XMD*\n\n ◦ *Github:* https://github.com/caseyweb/CASEYRHODES-XMD`;
+                            await sock.sendMessage(sock.user.id, {
+text: desc,
+contextInfo: {
+externalAdReply: {
+title: "CASEYRHODES-XMD",
+thumbnailUrl: "https://files.catbox.moe/mg79db.jpg",
+sourceUrl: "https://whatsapp.com/channel/0029VarDt9t30LKL1SoYXy26",
+mediaType: 2,
+renderLargerThumbnail: true,
+showAdAttribution: true
+}  
+}
+},
+{quoted:ddd })
+                    }
+                    await delay(10);
+                    await sock.ws.close();
+                    await removeFile('./temp/' + id);
+                    console.log(`👤 ${sock.user.id} 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱 ✅ 𝗥𝗲𝘀𝘁𝗮𝗿𝘁𝗶𝗻𝗴 𝗽𝗿𝗼𝗰𝗲𝘀𝘀...`);
+                    await delay(10);
+                    process.exit();
+                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
+                    await delay(10);
+                    GIFTED_MD_PAIR_CODE();
                 }
             });
         } catch (err) {
-            console.error("Service Error:", err);
-            await removeFile(tempDir);
-            
+            console.log("service restated");
+            await removeFile('./temp/' + id);
             if (!res.headersSent) {
-                res.status(500).send({ error: "Service is Currently Unavailable" });
+                await res.send({ code: "❗ Service Unavailable" });
             }
         }
     }
-
-    try {
-        await GIFTED_PAIR_CODE();
-    } catch (error) {
-        console.error("Unexpected error:", error);
-        if (!res.headersSent) {
-            res.status(500).send({ error: "Internal server error" });
-        }
-    }
-});
-
+   return await GIFTED_MD_PAIR_CODE();
+});/*
+setInterval(() => {
+    console.log("☘️ 𝗥𝗲𝘀𝘁𝗮𝗿𝘁𝗶𝗻𝗴 𝗽𝗿𝗼𝗰𝗲𝘀𝘀...");
+    process.exit();
+}, 180000); //30min*/
 module.exports = router;
