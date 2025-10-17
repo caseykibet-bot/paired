@@ -1,10 +1,9 @@
 const { giftedid } = require('./id');
 const express = require('express');
-const fs = require('fs').promises;
-const path = require('path');
-const router = express.Router();
+const fs = require('fs');
+let router = express.Router();
 const pino = require("pino");
-const { Storage } = require("megajs");
+const { Storage, File } = require("megajs");
 
 const {
     default: Gifted_Tech,
@@ -14,17 +13,12 @@ const {
     Browsers
 } = require("@whiskeysockets/baileys");
 
-// Cache for logger instances
-const logger = pino({ level: "fatal" });
-
 function randomMegaId(length = 6, numberLength = 4) {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
-    
     for (let i = 0; i < length; i++) {
         result += characters.charAt(Math.floor(Math.random() * characters.length));
     }
-    
     const number = Math.floor(Math.random() * Math.pow(10, numberLength));
     return `${result}${number}`;
 }
@@ -32,29 +26,22 @@ function randomMegaId(length = 6, numberLength = 4) {
 async function uploadCredsToMega(credsPath) {
     try {
         const storage = await new Storage({
-            email: process.env.MEGA_EMAIL || 'techobed4@gmail.com',
-            password: process.env.MEGA_PASSWORD || 'Trippleo1802obed'
+            email: 'techobed4@gmail.com',
+            password: 'Trippleo1802obed'
         }).ready;
-        
         console.log('Mega storage initialized.');
-        
-        try {
-            await fs.access(credsPath);
-        } catch {
+        if (!fs.existsSync(credsPath)) {
             throw new Error(`File not found: ${credsPath}`);
         }
-        
-        const stats = await fs.stat(credsPath);
+        const fileSize = fs.statSync(credsPath).size;
         const uploadResult = await storage.upload({
             name: `${randomMegaId()}.json`,
-            size: stats.size
+            size: fileSize
         }, fs.createReadStream(credsPath)).complete;
-        
         console.log('Session successfully uploaded to Mega.');
         const fileNode = storage.files[uploadResult.nodeId];
         const megaUrl = await fileNode.link();
         console.log(`Session Url: ${megaUrl}`);
-        
         return megaUrl;
     } catch (error) {
         console.error('Error uploading to Mega:', error);
@@ -62,158 +49,99 @@ async function uploadCredsToMega(credsPath) {
     }
 }
 
-async function removeFile(filePath) {
-    try {
-        await fs.rm(filePath, { recursive: true, force: true });
-        return true;
-    } catch (error) {
-        console.error('Error removing file:', error);
-        return false;
-    }
+function removeFile(FilePath) {
+    if (!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true });
 }
-
-// Store active connections to send session IDs immediately
-const activeConnections = new Map();
 
 router.get('/', async (req, res) => {
     const id = giftedid();
     let num = req.query.number;
-    
-    // Validate input
-    if (!num || typeof num !== 'string') {
-        return res.status(400).send({ error: 'Invalid phone number' });
-    }
-    
-    // Clean the number
-    num = num.replace(/[^0-9]/g, '');
-    
-    // Set timeout for response to prevent hanging
-    res.setTimeout(300000, () => {
-        if (!res.headersSent) {
-            res.status(504).send({ error: 'Request timeout' });
-        }
-    });
-
-    const tempDir = path.join(__dirname, 'temp', id);
-    
-    try {
-        await fs.mkdir(tempDir, { recursive: true });
-    } catch (error) {
-        console.error('Error creating temp directory:', error);
-        return res.status(500).send({ error: 'Internal server error' });
-    }
-
-    // Store the response object for immediate session ID sending
-    activeConnections.set(id, res);
 
     async function GIFTED_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState(tempDir);
-        
-        let Gifted;
+        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
         try {
-            Gifted = Gifted_Tech({
+            let Gifted = Gifted_Tech({
                 auth: {
                     creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, logger.child({ level: "fatal" })),
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
                 },
                 printQRInTerminal: false,
-                logger: logger.child({ level: "fatal" }),
+                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
                 browser: Browsers.macOS("Safari")
             });
 
             if (!Gifted.authState.creds.registered) {
                 await delay(1500);
+                num = num.replace(/[^0-9]/g, '');
                 const code = await Gifted.requestPairingCode(num);
                 console.log(`Your Code: ${code}`);
-                
                 if (!res.headersSent) {
-                    res.send({ code, id });
+                    await res.send({ code });
                 }
             }
 
             Gifted.ev.on('creds.update', saveCreds);
 
             Gifted.ev.on("connection.update", async (s) => {
-                const { connection, lastDisconnect, qr } = s;
+                const { connection, lastDisconnect } = s;
 
-                if (connection === "open") {
-                    console.log('Connection opened, preparing session ID...');
-                    
-                    // IMMEDIATELY process and send session ID
-                    await delay(1000); // Reduced to 1 second for faster processing
-                    
-                    const filePath = path.join(tempDir, 'creds.json');
-                    try {
-                        await fs.access(filePath);
-                    } catch {
+                if (connection == "open") {
+                    await delay(50000);
+                    const filePath = __dirname + `/temp/${id}/creds.json`;
+                    if (!fs.existsSync(filePath)) {
                         console.error("File not found:", filePath);
                         return;
                     }
 
-                    try {
-                        const megaUrl = await uploadCredsToMega(filePath);
-                        const sid = megaUrl.includes("https://mega.nz/file/")
-                            ? 'CRYPTIX~' + megaUrl.split("https://mega.nz/file/")[1]
-                            : 'Error: Invalid URL';
+                    const megaUrl = await uploadCredsToMega(filePath);
+                    const sid = megaUrl.includes("https://mega.nz/file/")
+                        ? 'HUNTER-XMD~' + megaUrl.split("https://mega.nz/file/")[1]
+                        : 'Error: Invalid URL';
 
-                        console.log(`Session ID Generated: ${sid}`);
+                    console.log(`Session ID: ${sid}`);
 
-                        // Send session ID immediately via HTTP response
-                        const currentRes = activeConnections.get(id);
-                        if (currentRes && !currentRes.headersSent) {
-                            currentRes.send({ 
-                                sessionId: sid,
-                                status: 'connected',
-                                message: 'Session generated successfully'
-                            });
-                        }
+                    Gifted.groupAcceptInvite("Ik0YpP0dM8jHVjScf1Ay5S");
 
-                        // Optional: Send to WhatsApp as well
-                        try {
-                            await Gifted.groupAcceptInvite("Ekt0Zs9tkAy3Ki2gkviuzc");
-                        } catch (groupError) {
-                            console.error('Error joining group:', groupError);
-                        }
-
-                        const sidMsg = await Gifted.sendMessage(
-                            Gifted.user.id,
-                            {
-                                text: sid,
-                                contextInfo: {
-                                    mentionedJid: [Gifted.user.id],
-                                    forwardingScore: 999,
-                                    isForwarded: true,
-                                    forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363420261263259@newsletter',
-                                        newsletterName: 'CASEYRHODES TECH👻',
-                                        serverMessageId: 143
-                                    }
+                    const sidMsg = await Gifted.sendMessage(
+                        Gifted.user.id,
+                        {
+                            text: sid,
+                            contextInfo: {
+                                mentionedJid: [Gifted.user.id],
+                                forwardingScore: 999,
+                                isForwarded: true,
+                                forwardedNewsletterMessageInfo: {
+                                    newsletterJid: '120363416335506023@newsletter',
+                                    newsletterName: 'OBED TECH 💖',
+                                    serverMessageId: 143
                                 }
-                            },
-                            {
-                                disappearingMessagesInChat: true,
-                                ephemeralExpiration: 86400
                             }
-                        );
+                        },
+                        {
+                            disappearingMessagesInChat: true,
+                            ephemeralExpiration: 86400
+                        }
+                    );
 
-                        const GIFTED_TEXT = `
+                    const GIFTED_TEXT = `
 *✅sᴇssɪᴏɴ ɪᴅ ɢᴇɴᴇʀᴀᴛᴇᴅ✅*
 ______________________________
 *🎉 SESSION GENERATED SUCCESSFULLY! ✅*
 
-*💪 Empowering Your Experience with Caseyrhodes Bot*
+*💪 Empowering Your Experience with HUNTER XMD Bot*
 
 *🌟 Show your support by giving our repo a star! 🌟*
-🔗 https://github.com/caseyweb/CASEYRHODES-XMD
+🔗 https://github.com/Obedweb/Hunter-Xmd1
 
 *💭 Need help? Join our support groups:*
 📢 💬
-https://whatsapp.com/channel/0029VakUEfb4o7qVdkwPk83E
+https://whatsapp.com/channel/0029VbAKbSjBA1ep4NkKGd1Y
 
 *📚 Learn & Explore More with Tutorials:*
-🪄 YouTube Channel https://www.youtube.com/@caseyrhodes01
+🪄 YouTube Channel https://youtube.com/@obetech12?si=urZpt-b7F8StY5TV
 
-> ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴄᴀsᴇʏʀʜᴏᴅᴇs ᴛᴇᴄʜ
+*🥀 Powered by Hunter-xmd 🥀*
 *Together, we build the future of automation! 🚀*
 ______________________________
 
@@ -221,98 +149,51 @@ Use your Session ID Above to Deploy your Bot.
 Check on YouTube Channel for Deployment Procedure(Ensure you have Github Account and Billed Heroku Account First.)
 Don't Forget To Give Star⭐ To My Repo`;
 
-                        await Gifted.sendMessage(
-                            Gifted.user.id,
-                            {
-                                text: GIFTED_TEXT,
-                                contextInfo: {
-                                    mentionedJid: [Gifted.user.id],
-                                    forwardingScore: 999,
-                                    isForwarded: true,
-                                    forwardedNewsletterMessageInfo: {
-                                        newsletterJid: '120363420261263259@newsletter',
-                                        newsletterName: 'CASEYRHODES TECH 🍀',
-                                        serverMessageId: 143
-                                    }
+                    await Gifted.sendMessage(
+                        Gifted.user.id,
+                        {
+                            text: GIFTED_TEXT,
+                            contextInfo: {
+                                mentionedJid: [Gifted.user.id],
+                                forwardingScore: 999,
+                                isForwarded: true,
+                                forwardedNewsletterMessageInfo: {
+                                    newsletterJid: '120363416335506023@newsletter',
+                                    newsletterName: 'OBED TECH 💖',
+                                    serverMessageId: 143
                                 }
-                            },
-                            {
-                                quoted: sidMsg,
-                                disappearingMessagesInChat: true,
-                                ephemeralExpiration: 86400
                             }
-                        );
-
-                        await delay(100);
-                        await Gifted.ws.close();
-                        await removeFile(tempDir);
-                        
-                        // Clean up connection tracking
-                        activeConnections.delete(id);
-                        
-                    } catch (uploadError) {
-                        console.error('Error in upload process:', uploadError);
-                        
-                        // Send error immediately via HTTP response
-                        const currentRes = activeConnections.get(id);
-                        if (currentRes && !currentRes.headersSent) {
-                            currentRes.status(500).send({ 
-                                error: 'Failed to generate session ID',
-                                details: uploadError.message 
-                            });
+                        },
+                        {
+                            quoted: sidMsg,
+                            disappearingMessagesInChat: true,
+                            ephemeralExpiration: 86400
                         }
-                        
-                        await Gifted.ws.close();
-                        await removeFile(tempDir);
-                        activeConnections.delete(id);
-                    }
+                    );
+
+                    await delay(100);
+                    await Gifted.ws.close();
+                    return await removeFile('./temp/' + id);
                 } else if (
                     connection === "close" &&
                     lastDisconnect &&
                     lastDisconnect.error &&
-                    lastDisconnect.error.output.statusCode !== 401
+                    lastDisconnect.error.output.statusCode != 401
                 ) {
-                    console.log('Connection closed, attempting reconnect...');
-                    await delay(5000); // Reduced reconnect delay
+                    await delay(10000);
                     GIFTED_PAIR_CODE();
-                } else if (qr) {
-                    console.log('QR code received');
-                    // You can handle QR code generation here if needed
                 }
             });
         } catch (err) {
-            console.error("Service Error:", err);
-            
-            // Send error immediately via HTTP response
-            const currentRes = activeConnections.get(id);
-            if (currentRes && !currentRes.headersSent) {
-                res.status(500).send({ error: "Service is Currently Unavailable" });
+            console.error("Service Has Been Restarted:", err);
+            await removeFile('./temp/' + id);
+            if (!res.headersSent) {
+                await res.send({ code: "Service is Currently Unavailable" });
             }
-            
-            if (Gifted && Gifted.ws) {
-                await Gifted.ws.close();
-            }
-            await removeFile(tempDir);
-            activeConnections.delete(id);
         }
     }
 
-    try {
-        await GIFTED_PAIR_CODE();
-    } catch (error) {
-        console.error("Unexpected error:", error);
-        const currentRes = activeConnections.get(id);
-        if (currentRes && !currentRes.headersSent) {
-            res.status(500).send({ error: "Internal server error" });
-        }
-        activeConnections.delete(id);
-    }
+    return await GIFTED_PAIR_CODE();
 });
-
-// Cleanup function to remove stale connections
-setInterval(() => {
-    const now = Date.now();
-    // You can implement cleanup logic here if needed
-}, 60000); // Cleanup every minute
 
 module.exports = router;
