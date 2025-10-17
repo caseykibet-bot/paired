@@ -18,7 +18,7 @@
   "author": "Gifted Tech",
   "license": "GPL-3.0-only",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.8.1",
+    "@whiskeysockets/baileys": "github:Obedweb3/ObedTech-Baileys",
     "qrcode": "^1.5.3",
     "awesome-phonenumber": "^5.4.0",
     "megajs": "^1.1.0",
